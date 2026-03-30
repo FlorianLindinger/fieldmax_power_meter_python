@@ -4,7 +4,7 @@ Python wrapper for Coherent FieldMax II power meters on Windows using
 `FieldMax2Lib.dll`.
 
 This code started as an adaptation of
-[`pyFieldMaxII`](https://github.com/jscman/pyFieldMaxII).
+[`pyFieldMaxII`](https://github.com/jscman/pyFieldMaxII) by [`jacman`](https://github.com/jscman).
 
 This project provides:
 
@@ -28,11 +28,8 @@ The main module, `fieldmax_power_meter.py`, exposes the
 ## Requirements
 
 - Windows
-- Python 3.10+ recommended
 - A Coherent FieldMax II meter
 - Coherent's `FieldMax2Lib.dll`
-
-No third-party Python packages are required.
 
 ## Where To Get The DLL
 
@@ -58,6 +55,7 @@ You have two supported options:
    so the code uses the default global install path.
 2. Copy `FieldMax2Lib.dll` into this repository folder and use the default
    local path via `power_meter_handler()`.
+3. Copy `FieldMax2Lib.dll` into a folder provide the full dll path via `power_meter_handler(dll_path="example\\FieldMax2Lib.dll")`.
 
 `FieldMax2Lib.dll` is a third-party vendor file with its own license. Do not
 commit it to a public repository or redistribute it unless its own license
@@ -94,16 +92,3 @@ Run it from the repository directory:
 ```powershell
 python .\test_run.py
 ```
-
-## Notes
-
-- The vendor DLL is loaded through `ctypes`.
-- The DLL calls run in a separate process to recover from timeouts or hangs.
-- If you already copied `FieldMax2Lib.dll` into the repo root, the default
-  constructor `power_meter_handler()` will use it automatically.
-
-## License
-
-The original source code in this repository is MIT licensed. `FieldMax2Lib.dll`
-is not covered by MIT and remains subject to its own license terms. See
-`LICENSE.md` and `FieldMax2Lib.dll LICENSE.txt`.
