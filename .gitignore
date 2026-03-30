@@ -1,4 +1,4 @@
-# belongs to Coherent:
+# Third-party Coherent binary; do not commit or share publicly.
 FieldMax2Lib.dll
 # test saving file:
 test.csv
