@@ -33,29 +33,17 @@ The main module, `fieldmax_power_meter.py`, exposes the
 
 ## Where To Get The DLL
 
-`FieldMax2Lib.dll` is installed by Coherent's FieldMaxII PC software.
+`FieldMax2Lib.dll` is installed by Coherent's FieldMaxII PC software, which can be downloaded under https://repo.coherent.com/software/FieldMaxII_v3.3.2.9_rc1_setup.exe
+and comes from the website https://www.coherent.com/de/laser-power-energy-measurement/meters/fieldmax.
 
-Official Coherent download link:
+After installation, this the DLL should be at the path ```C:\Program Files (x86)\Coherent\FieldMaxII PC\Drivers\Win10\FieldMax2Lib\x64\FieldMax2Lib.dll```.
 
-- https://repo.coherent.com/software/FieldMaxII_v3.3.2.9_rc1_setup.exe
+You have three supported options after the dll installation:
 
-Coherent's FieldMax II Software Installation and Quick Start Guide instructs
-users to download the FieldMaxII software from the Coherent resources page and
-then run the installer.
-
-After installation, this project expects the DLL at the default path:
-
-```text
-C:\Program Files (x86)\Coherent\FieldMaxII PC\Drivers\Win10\FieldMax2Lib\x64\FieldMax2Lib.dll
-```
-
-You have two supported options:
-
-1. Install the Coherent software and use `power_meter_handler(dll_path=None)`
-   so the code uses the default global install path.
-2. Copy `FieldMax2Lib.dll` into this repository folder and use the default
-   local path via `power_meter_handler()`.
-3. Copy `FieldMax2Lib.dll` into a folder provide the full dll path via `power_meter_handler(dll_path="example\\FieldMax2Lib.dll")`.
+1. Use `power_meter_handler()` 
+   which finds the dll at the default global install path if it was installed there.
+2. Copy `FieldMax2Lib.dll` into this repo and use `power_meter_handler()` which finds the dll locally.
+3. Copy `FieldMax2Lib.dll` into any folder and provide the full dll path via `power_meter_handler(dll_path="example\\FieldMax2Lib.dll")`.
 
 `FieldMax2Lib.dll` is a third-party vendor file with its own license. Do not
 commit it to a public repository or redistribute it unless its own license
@@ -70,12 +58,11 @@ pm = power_meter_handler(dll_path=None)
 
 if pm.connect(device_idx=0):
     try:
-        pm.set_current_power_to_0()
+        # pm.set_current_power_to_0() # optional
         power_min_W, power_mean_W, power_max_W = pm.read_power_W()
         print(power_min_W, power_mean_W, power_max_W)
     finally:
         pm.disconnect()
-        pm.final_shutdown()
 ```
 
 ## Example Script
