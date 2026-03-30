@@ -1,26 +1,31 @@
-################
-# example:
+"""Process-isolated Python wrapper for Coherent FieldMax II power meters.
 
-# dll_folder_path = r"C:\Program Files (x86)\Coherent\FieldMaxII PC\Drivers\Win10\FieldMax2Lib\x64\FieldMax2Lib.dll"
-# pm = power_meter_handler(dll_folder_path)
-# pm.connect(device_idx=0)
-# pm.set_current_power_to_0() # optional
-# power_min_W,power_mean_W,power_max_W = pm.read_power_W()
-# pm.disconnect()
+This code started as an adaptation of `pyFieldMaxII`:
+https://github.com/jscman/pyFieldMaxII
 
-################
+Example:
+    dll_path = (
+        r"C:\\Program Files (x86)\\Coherent\\FieldMaxII PC\\Drivers\\Win10"
+        r"\\FieldMax2Lib\\x64\\FieldMax2Lib.dll"
+    )
+    pm = power_meter_handler(dll_path)
+    pm.connect(device_idx=0)
+    pm.set_current_power_to_0()  # optional
+    power_min_W, power_mean_W, power_max_W = pm.read_power_W()
+    pm.disconnect()
+"""
 
 import atexit
 import ctypes
+import math
 import multiprocessing
 import os
 import time
 import traceback
 
-import numpy as np
-
 
 def error_print(message, max_wrapper_len=20, wrapper_symbol="=", middle_symbol="-"):
+    """Print an error banner and the active traceback, if one exists."""
     msg_len = len(message)
     if msg_len > max_wrapper_len:
         msg_len = max_wrapper_len
@@ -34,10 +39,12 @@ def error_print(message, max_wrapper_len=20, wrapper_symbol="=", middle_symbol="
 
 
 def _driver_worker(conn, dll_path: str):
+    """Execute all DLL calls in a child process to isolate DLL hangs."""
     conn.send(("init_ok", None))
     dll = None
 
     def _load_dll():
+        """Load the vendor DLL lazily inside the worker process."""
         nonlocal dll
         if dll is None:
             dll = ctypes.windll.LoadLibrary(dll_path)
@@ -159,13 +166,17 @@ def _driver_worker(conn, dll_path: str):
 
 
 class _DriverProcess:
+    """Manage the worker process that owns the DLL handle."""
+
     def __init__(self, dll_path: str):
+        """Start a fresh worker process for the supplied DLL path."""
         self.dll_path = os.path.abspath(dll_path)
         self.parent_conn = None
         self.proc = None
         self.start()
 
     def start(self):
+        """Spawn the worker process and wait for its initialization signal."""
         ctx = multiprocessing.get_context("spawn")
         parent_conn, child_conn = ctx.Pipe()
 
@@ -189,6 +200,7 @@ class _DriverProcess:
             raise TimeoutError(f"Timed out starting DLL worker process (exitcode={exitcode})")
 
     def terminate(self):
+        """Terminate the worker process immediately and drop local handles."""
         try:
             if self.proc is not None and self.proc.is_alive():
                 self.proc.terminate()
@@ -198,10 +210,12 @@ class _DriverProcess:
             self.parent_conn = None
 
     def restart(self):
+        """Restart the worker process after a timeout or crash."""
         self.terminate()
         self.start()
 
     def request(self, cmd: str, payload: dict, timeout_s: float | None = None):
+        """Send a command to the worker and optionally enforce a timeout."""
         if self.proc is None or self.parent_conn is None or not self.proc.is_alive():
             self.restart()
 
@@ -218,6 +232,7 @@ class _DriverProcess:
         # raise TimeoutError(f"Worker timed out on command '{cmd}' after {timeout_s} s")
 
     def stop(self):
+        """Ask the worker to stop cleanly, then terminate if needed."""
         try:
             if self.proc is not None and self.parent_conn is not None and self.proc.is_alive():
                 try:
@@ -231,8 +246,16 @@ class _DriverProcess:
 
 
 class power_meter_handler:
+    """High-level interface for talking to a Coherent FieldMax II meter."""
+
     def __init__(self, dll_path=r".\FieldMax2Lib.dll"):
-        """dll_path is the path to FieldMax2Lib.dll. By default it checks for the dll in the current folder. If dll_path==None it uses the normal global dll install path for the Coherent dlls."""
+        """Create a meter handler for a local or globally installed DLL.
+
+        Args:
+            dll_path: Path to `FieldMax2Lib.dll`. If omitted, the current
+                working directory is checked first. If `None`, the default
+                global install path used by the Coherent installer is used.
+        """
         if dll_path is None:
             dll_path=r"C:\Program Files (x86)\Coherent\FieldMaxII PC\Drivers\Win10\FieldMax2Lib\x64\FieldMax2Lib.dll"
         else:
@@ -247,7 +270,11 @@ class power_meter_handler:
     def send_command(
         self, command: str, print_error=True, buffer_len: int = 100, sync=True, timeout_s: float | None = None
     ):
-        """See "FieldMaxII LabVIEW Examples - Getting Started" for commands"""
+        """Send a low-level packaged command to the meter and return its reply.
+        
+        See "fieldmaxii-labview-examples.zip/Getting Started FMII LV.pdf" for commands: 
+        https://www.coherent.com/content/dam/coherent/site/en/resources/laser-measurement-and-control-help-center/software-drivers-and-manuals/fieldmax-ii/fieldmaxii-labview-examples.zip
+        """
 
         if self._connected_meter_id is None:
             print("Connect to FieldMax power meter before sending commands.")
@@ -292,7 +319,7 @@ class power_meter_handler:
         sync: bool = True,
         timeout_s: float | None = 5.0,
     ) -> bool:
-        """Hang-safe connect: all DLL calls live in the worker process."""
+        """Open the device at `device_idx` and verify that it responds."""
         if self._connected_meter_id is not None:
             self.disconnect(print_error=print_error, timeout_s=2)
         try:
@@ -334,6 +361,7 @@ class power_meter_handler:
         print_error: bool = True,
         timeout_s: float | None = 3.0,
     ) -> bool:
+        """Close the current meter connection, if one is active."""
         if self._connected_meter_id is None:
             return True
 
@@ -354,9 +382,11 @@ class power_meter_handler:
             self._connected_meter_id = None
 
     def get_meter_id(self) -> int | None:
+        """Return the driver-assigned ID for the active meter connection."""
         return self._connected_meter_id
 
     def get_serial_number(self, print_error=True, timeout_s: float | None = 5):
+        """Return the connected meter serial number, or `None` on failure."""
         if self._connected_meter_id is not None:
             try:
                 result = self._request("get_serial_number", {"meter_id": self._connected_meter_id}, timeout_s=timeout_s)
@@ -379,6 +409,7 @@ class power_meter_handler:
             return None
 
     def set_current_power_to_0(self, print_error=True) -> None:
+        """Run the meter's zeroing routine until it reports completion."""
         if self._connected_meter_id is None:
             print("[Error] Open connection to FieldMax power meter before zeroing.")
         else:
@@ -392,9 +423,11 @@ class power_meter_handler:
                     error_print(f"[Error] Failed to set zero for FieldMax power meter: {e}")
 
     def is_connected(self) -> bool:
+        """Return `True` when a meter ID is currently stored locally."""
         return self._connected_meter_id is not None
 
     def is_confirmed_connected(self, timeout_s=2) -> bool:
+        """Verify the connection by fetching the serial number."""
         try:
             sn = self.get_serial_number(timeout_s=timeout_s, print_error=False)
             if sn is None:
@@ -407,24 +440,28 @@ class power_meter_handler:
     def read_power_W(
         self, print_error: bool = True, retries: int = 5, retry_delay_s: float = 0.05, timeout_s: float | None = 5
     ) -> tuple[float, float, float] | tuple[None, None, None]:
-        """Returns min,mean,max of up to 8 valid power readings."""
+        """Return min/mean/max in watts from the latest valid power samples."""
         if self._connected_meter_id is None:
             print("[Error] Open connection to FieldMax power meter before reading data.")
             return None, None, None
         else:
             try:
                 for _ in range(retries + 1):
-                    data = np.array(self._read_power_array_W(timeout_s=timeout_s))  # returns 8 floats
+                    data = self._read_power_array_W(timeout_s=timeout_s)  # returns 8 floats
 
                     if data is None:
                         if print_error:
                             error_print("[Error] Failed to get FieldMax power meter power.")
                         return None, None, None
 
-                    if np.any(data != 0):
+                    real_data = [value for value in data if value != 0]
+                    if real_data:
                         # 0 means no data
-                        real_data = [v for v in data if v != 0]
-                        return (np.min(real_data), np.mean(real_data), np.max(real_data))
+                        return (
+                            min(real_data),
+                            math.fsum(real_data) / len(real_data),
+                            max(real_data),
+                        )
                     else:
                         time.sleep(retry_delay_s)
                 else:
@@ -437,7 +474,7 @@ class power_meter_handler:
                 return None, None, None
 
     def set_wavelength_nm(self, wavelength_nm, sync=True, timeout_s: float | None = 5, print_error=True):
-        """Returns True if successfully set. The power meter clamps to range tho which would still return success"""
+        """Set the wavelength in nanometers. Returns False if not sucessfully set, including if wavelength was clamped by allowed range."""
         if wavelength_nm is not None:
             response = self.send_command(f"WOO{wavelength_nm}", sync=sync, timeout_s=timeout_s)
             if response != "" and response is not None:
@@ -457,6 +494,7 @@ class power_meter_handler:
             return True
 
     def get_wavelength_nm(self, sync=True, timeout_s: float | None = 5) -> None | float:
+        """Return the configured wavelength in nanometers."""
         response = self.send_command("WOO", sync=sync, timeout_s=timeout_s)
         if response is not None and response != "":
             return float(response.split(",")[0])
@@ -464,6 +502,7 @@ class power_meter_handler:
             return None
 
     def set_auto_range(self, on=True, sync=True, timeout_s: float | None = 5, print_error=True):
+        """Enable or disable the meter's auto-ranging mode."""
         if on is not None:
             response = self.send_command(f"AUT{int(on)}", sync=sync, timeout_s=timeout_s)
 
@@ -481,6 +520,7 @@ class power_meter_handler:
         return True
 
     def get_auto_range(self, sync=True, timeout_s: float | None = 5) -> bool | None:
+        """Return the current auto-ranging state, or `None` on failure."""
         response = self.send_command("AUT", sync=sync, timeout_s=timeout_s)
         if response is not None and response != "":
             return bool(response)
@@ -491,6 +531,7 @@ class power_meter_handler:
     # backend methods
 
     def final_shutdown(self, timeout_s: float | None = 2.0):
+        """Disconnect the meter and stop the background DLL worker."""
         try:
             self.disconnect(print_error=False, timeout_s=timeout_s)
         except Exception:
@@ -501,6 +542,7 @@ class power_meter_handler:
             pass
 
     def _request(self, cmd: str, payload: dict, timeout_s: float | None = 5.0):
+        """Send a worker request and normalize worker errors and timeouts."""
         status, value = self._driver_proc.request(cmd, payload, timeout_s=timeout_s)
         if status == "err":
             raise RuntimeError(value)
@@ -511,6 +553,7 @@ class power_meter_handler:
             return value
 
     def _read_power_array_W(self, timeout_s: float | None = 5):
+        """Read the raw sample block and decode the power values in watts."""
         result = self._request("get_data", {"meter_id": self._connected_meter_id, "addr": 8}, timeout_s=timeout_s)
         if result is None:
             return None
@@ -518,6 +561,7 @@ class power_meter_handler:
         return self._data_bytes2float(out_array)[0]
 
     def _sync(self, timeout_s: float | None = 5.0) -> None:
+        """Flush pending meter state via the vendor DLL sync call."""
         self._request(
             "sync",
             {"meter_id": self._connected_meter_id},
@@ -525,12 +569,15 @@ class power_meter_handler:
         )
 
     def _zeroing_start(self, timeout_s: float | None = 5.0):
+        """Start the meter zeroing procedure."""
         return self._request("zero_start", {"meter_id": self._connected_meter_id}, timeout_s=timeout_s)
 
     def _zeroing_reply(self, timeout_s: float | None = 5.0):
+        """Poll the meter for the current zeroing status."""
         return self._request("zero_reply", {"meter_id": self._connected_meter_id}, timeout_s=timeout_s)
 
     def _data_bytes2float(self, l):
+        """Decode the DLL data block into interleaved power and period arrays."""
         float_p = ctypes.cast(l, ctypes.POINTER(ctypes.c_float))
         power = [float_p[0], float_p[2], float_p[4], float_p[6], float_p[8], float_p[10], float_p[12], float_p[14]]
         period = [float_p[1], float_p[3], float_p[5], float_p[7], float_p[9], float_p[11], float_p[13], float_p[15]]

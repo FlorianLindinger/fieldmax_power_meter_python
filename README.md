@@ -1,0 +1,109 @@
+# fieldmax_power_meter_python
+
+Python wrapper for Coherent FieldMax II power meters on Windows using
+`FieldMax2Lib.dll`.
+
+This code started as an adaptation of
+[`pyFieldMaxII`](https://github.com/jscman/pyFieldMaxII).
+
+This project provides:
+
+- A small Python API for connecting to a FieldMax II meter.
+- A worker-process wrapper around the vendor DLL so DLL hangs do not take down
+  the main Python process.
+- An example script that logs readings to `test.csv`.
+
+## What This Repo Does
+
+The main module, `fieldmax_power_meter.py`, exposes the
+`power_meter_handler` class. It can:
+
+- Connect to a FieldMax II meter by device index.
+- Read power values in watts.
+- Zero the current power reading.
+- Set and read wavelength.
+- Enable or disable auto ranging.
+- Send low-level packaged commands when needed.
+
+## Requirements
+
+- Windows
+- Python 3.10+ recommended
+- A Coherent FieldMax II meter
+- Coherent's `FieldMax2Lib.dll`
+
+No third-party Python packages are required.
+
+## Where To Get The DLL
+
+`FieldMax2Lib.dll` is installed by Coherent's FieldMaxII PC software.
+
+Official Coherent download link:
+
+- https://repo.coherent.com/software/FieldMaxII_v3.3.2.9_rc1_setup.exe
+
+Coherent's FieldMax II Software Installation and Quick Start Guide instructs
+users to download the FieldMaxII software from the Coherent resources page and
+then run the installer.
+
+After installation, this project expects the DLL at the default path:
+
+```text
+C:\Program Files (x86)\Coherent\FieldMaxII PC\Drivers\Win10\FieldMax2Lib\x64\FieldMax2Lib.dll
+```
+
+You have two supported options:
+
+1. Install the Coherent software and use `power_meter_handler(dll_path=None)`
+   so the code uses the default global install path.
+2. Copy `FieldMax2Lib.dll` into this repository folder and use the default
+   local path via `power_meter_handler()`.
+
+`FieldMax2Lib.dll` is a third-party vendor file with its own license. Do not
+commit it to a public repository or redistribute it unless its own license
+allows that. This repo's `.gitignore` already excludes it.
+
+## Basic Usage
+
+```python
+from fieldmax_power_meter import power_meter_handler
+
+pm = power_meter_handler(dll_path=None)
+
+if pm.connect(device_idx=0):
+    try:
+        pm.set_current_power_to_0()
+        power_min_W, power_mean_W, power_max_W = pm.read_power_W()
+        print(power_min_W, power_mean_W, power_max_W)
+    finally:
+        pm.disconnect()
+        pm.final_shutdown()
+```
+
+## Example Script
+
+`test_run.py` shows a simple logging workflow. It:
+
+- Connects to the first detected device.
+- Optionally sets wavelength and auto range.
+- Reads power repeatedly.
+- Appends timestamped measurements to `test.csv`.
+
+Run it from the repository directory:
+
+```powershell
+python .\test_run.py
+```
+
+## Notes
+
+- The vendor DLL is loaded through `ctypes`.
+- The DLL calls run in a separate process to recover from timeouts or hangs.
+- If you already copied `FieldMax2Lib.dll` into the repo root, the default
+  constructor `power_meter_handler()` will use it automatically.
+
+## License
+
+The original source code in this repository is MIT licensed. `FieldMax2Lib.dll`
+is not covered by MIT and remains subject to its own license terms. See
+`LICENSE.md` and `FieldMax2Lib.dll LICENSE.txt`.

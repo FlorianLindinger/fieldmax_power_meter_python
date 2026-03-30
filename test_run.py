@@ -1,3 +1,5 @@
+"""Example script for connecting to a FieldMax meter and logging readings."""
+
 import os
 import sys
 import time
@@ -6,7 +8,8 @@ from datetime import datetime
 os.chdir(os.path.dirname(os.path.abspath(__file__)))
 from fieldmax_power_meter import error_print, power_meter_handler
 
-if __name__ == "__main__":
+def main():
+    """Run a simple measurement loop and append results to `test.csv`."""
     dll_path = r".\FieldMax2Lib.dll" # set None to use global
     device_idx = 0
     wavelength_nm = 1980  # set None to not change
@@ -63,3 +66,7 @@ if __name__ == "__main__":
             pm.final_shutdown()  # type:ignore
         except Exception:
             pass
+
+
+if __name__ == "__main__":
+    main()
