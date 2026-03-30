@@ -4,11 +4,7 @@ This code started as an adaptation of `pyFieldMaxII`:
 https://github.com/jscman/pyFieldMaxII
 
 Example:
-    dll_path = (
-        r"C:\\Program Files (x86)\\Coherent\\FieldMaxII PC\\Drivers\\Win10"
-        r"\\FieldMax2Lib\\x64\\FieldMax2Lib.dll"
-    )
-    pm = power_meter_handler(dll_path)
+    pm = power_meter_handler(dll_path=None)
     pm.connect(device_idx=0)
     pm.set_current_power_to_0()  # optional
     power_min_W, power_mean_W, power_max_W = pm.read_power_W()
@@ -23,6 +19,14 @@ import os
 import time
 import traceback
 
+MODULE_DIR = os.path.dirname(os.path.abspath(__file__))
+LOCAL_DLL_PATH = os.path.join(MODULE_DIR, "FieldMax2Lib.dll")
+GLOBAL_DLL_PATH = (
+    r"C:\Program Files (x86)\Coherent\FieldMaxII PC\Drivers\Win10"
+    r"\FieldMax2Lib\x64\FieldMax2Lib.dll"
+)
+FIELDMAX_INSTALLER_URL = "https://repo.coherent.com/software/FieldMaxII_v3.3.2.9_rc1_setup.exe"
+
 
 def error_print(message, max_wrapper_len=20, wrapper_symbol="=", middle_symbol="-"):
     """Print an error banner and the active traceback, if one exists."""
@@ -36,6 +40,34 @@ def error_print(message, max_wrapper_len=20, wrapper_symbol="=", middle_symbol="
         print(middle_symbol * msg_len)
         print(error, end="")
     print(wrapper_symbol * msg_len)
+
+
+def _resolve_dll_path(dll_path: str | None) -> str:
+    """Resolve an explicit DLL path or the standard local-then-global lookup."""
+    if dll_path is None:
+        candidates = [LOCAL_DLL_PATH, GLOBAL_DLL_PATH]
+    else:
+        candidates = [os.path.abspath(dll_path)]
+
+    for candidate in candidates:
+        if os.path.exists(candidate):
+            return os.path.abspath(candidate)
+
+    if dll_path is None:
+        raise FileNotFoundError(
+            "[Error]: DLL file not found. Checked local path "
+            f'"{LOCAL_DLL_PATH}" and expected global path "{GLOBAL_DLL_PATH}". '
+            f'Install the Coherent software from "{FIELDMAX_INSTALLER_URL}" '
+            "or place FieldMax2Lib.dll next to this module."
+        )
+
+    resolved_path = os.path.abspath(dll_path)
+    raise FileNotFoundError(
+        f'[Error]: DLL file not found at "{resolved_path}". '
+        f'Install the Coherent software from "{FIELDMAX_INSTALLER_URL}" or use '
+        "power_meter_handler(dll_path=None) to search the local repo copy first "
+        "and then the global install path."
+    )
 
 
 def _driver_worker(conn, dll_path: str):
@@ -248,22 +280,17 @@ class _DriverProcess:
 class power_meter_handler:
     """High-level interface for talking to a Coherent FieldMax II meter."""
 
-    def __init__(self, dll_path=r".\FieldMax2Lib.dll"):
+    def __init__(self, dll_path: str | None = None):
         """Create a meter handler for a local or globally installed DLL.
 
         Args:
-            dll_path: Path to `FieldMax2Lib.dll`. If omitted, the current
-                working directory is checked first. If `None`, the default
-                global install path used by the Coherent installer is used.
+            dll_path: Path to `FieldMax2Lib.dll`. If `None`, the code first
+                checks for a repo-local `FieldMax2Lib.dll` next to this module,
+                then falls back to the expected global install path.
         """
-        if dll_path is None:
-            dll_path=r"C:\Program Files (x86)\Coherent\FieldMaxII PC\Drivers\Win10\FieldMax2Lib\x64\FieldMax2Lib.dll"
-        else:
-            dll_path = os.path.abspath(dll_path)
-        if not os.path.exists(dll_path):
-            raise FileNotFoundError(rf'[Error]: DLL file not found at "{dll_path}". DLL file Should be installable via "https://repo.coherent.com/software/FieldMaxII_v3.3.2.9_rc1_setup.exe" which should install the DLL at "C:\Program Files (x86)\Coherent\FieldMaxII PC\Drivers\Win10\FieldMax2Lib\x64\FieldMax2Lib.dll". Use power_meter_handler(dll_path=None) to select this global path.')
+        resolved_dll_path = _resolve_dll_path(dll_path)
 
-        self._driver_proc = _DriverProcess(dll_path)
+        self._driver_proc = _DriverProcess(resolved_dll_path)
         self._connected_meter_id = None
         atexit.register(self.final_shutdown)
 

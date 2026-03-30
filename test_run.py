@@ -10,7 +10,7 @@ from fieldmax_power_meter import error_print, power_meter_handler
 
 def main():
     """Run a simple measurement loop and append results to `test.csv`."""
-    dll_path = r".\FieldMax2Lib.dll" # set None to use global
+    dll_path = None  # search local repo copy first, then global install path
     device_idx = 0
     wavelength_nm = 1980  # set None to not change
     auto_range = True  # set None to not change
