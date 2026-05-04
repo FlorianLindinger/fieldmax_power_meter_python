@@ -119,7 +119,7 @@ class LivePlotApp:
         self.fig.canvas.mpl_connect("close_event", lambda event: self.close()) #noqa
 
         try:
-            self.fig.canvas.manager.set_window_title(settings.window_title)
+            self.fig.canvas.manager.set_window_title(settings.window_title) #type: ignore
         except Exception:
             pass
 
