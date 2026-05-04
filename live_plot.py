@@ -28,12 +28,12 @@ class LivePlotSettings:
     zero_on_start: bool = False
     read_interval_s: float = 0.20
     history_seconds: float = 60.0
-    average_count: int = 5
+    average_seconds: float = 2.0
     read_timeout_s: float = 2.0
     window_width: int = 1000
     window_height: int = 600
     redraw_interval_ms: int = 100
-    window_title: str = "FieldMax Live Plot"
+    window_title: str = "FieldMaxPM"
 
 
 SETTINGS = LivePlotSettings()
@@ -90,8 +90,8 @@ def validate_settings(settings: LivePlotSettings) -> None:
     """Reject invalid startup values before talking to the meter."""
     if settings.history_seconds <= 0:
         raise ValueError("history_seconds must be greater than 0.")
-    if settings.average_count < 1:
-        raise ValueError("average_count must be at least 1.")
+    if settings.average_seconds < 0:
+        raise ValueError("average_seconds must be 0 or greater.")
     if settings.read_interval_s <= 0:
         raise ValueError("read_interval_s must be greater than 0.")
     if settings.read_timeout_s <= 0:
@@ -115,9 +115,15 @@ class LivePlotApp:
 
         self.fig, self.ax = plt.subplots(figsize=(settings.window_width / 100, settings.window_height / 100))
         self.fig.canvas.mpl_connect("close_event", lambda event: self.close())
+        try:
+            self.fig.canvas.manager.set_window_title(settings.window_title)
+        except Exception:
+            pass
 
-        self.line_raw, = self.ax.plot([], [], color="#0078d4", label="Raw")
-        self.line_avg, = self.ax.plot([], [], color="#d45f00", linestyle="--", label=f"Avg ({settings.average_count})")
+        (self.line_raw,) = self.ax.plot([], [], color="#0078d4", label="Raw")
+        (self.line_avg,) = self.ax.plot(
+            [], [], color="#d45f00", linestyle="--", label=f"Avg (~{settings.average_seconds:.1f}s)"
+        )
         self.status_text_obj = self.ax.text(
             0.01,
             0.95,
@@ -129,7 +135,7 @@ class LivePlotApp:
             bbox={"facecolor": "white", "alpha": 0.8, "edgecolor": "none"},
         )
 
-        self.ax.set_xlabel("Seconds")
+        self.ax.set_xlabel("Seconds ago")
         self.ax.set_ylabel("Power [mW]")
         self.ax.set_title(settings.window_title)
         self.ax.legend(loc="lower left")
@@ -202,9 +208,20 @@ class LivePlotApp:
             self._trim_samples_locked(current_time)
             return list(self.samples)
 
+    def _effective_average_count(self) -> int:
+        """Return the number of samples to average based on the configured seconds."""
+        if self.settings.average_seconds <= 0:
+            return 1
+        count = int(round(self.settings.average_seconds / self.settings.read_interval_s))
+        return max(1, count)
+
     def _compute_running_average(self, samples: list[tuple[float, float]]) -> list[tuple[float, float]]:
         """Compute a simple trailing average over the most recent samples."""
-        if self.settings.average_count <= 1 or not samples:
+        if not samples:
+            return []
+
+        average_count = self._effective_average_count()
+        if average_count <= 1:
             return []
 
         window: deque[float] = deque()
@@ -214,19 +231,23 @@ class LivePlotApp:
         for timestamp, power in samples:
             window.append(power)
             running_sum += power
-            if len(window) > self.settings.average_count:
+            if len(window) > average_count:
                 running_sum -= window.popleft()
             avg_samples.append((timestamp, running_sum / len(window)))
 
         return avg_samples
 
-    def _select_display_units(self, samples: list[tuple[float, float]], avg_samples: list[tuple[float, float]]) -> tuple[float, str, int]:
+    def _select_display_units(
+        self, samples: list[tuple[float, float]], avg_samples: list[tuple[float, float]]
+    ) -> tuple[float, str, int]:
         """Return scale, unit label, and decimals based on the current history."""
         max_power = 0.0
         if samples:
             max_power = max(power for _, power in samples)
         if avg_samples:
             max_power = max(max_power, max(power for _, power in avg_samples))
+        if max_power == 0.0 and self.latest_power_w is not None:
+            max_power = abs(self.latest_power_w)
 
         if max_power > 1.0:
             return 1.0, "W", 3
@@ -241,8 +262,6 @@ class LivePlotApp:
     def _draw_plot(self, frame) -> None:
         """Render the live plot frame."""
         samples = self._copy_samples()
-        avg_samples = self._compute_running_average(samples)
-
         avg_samples = self._compute_running_average(samples)
         scale, unit, decimals = self._select_display_units(samples, avg_samples)
         self.ax.set_ylabel(f"Power [{unit}]")
@@ -290,9 +309,8 @@ class LivePlotApp:
         self.ax.set_xlim(0, self.settings.history_seconds)
         self.ax.set_ylim(min_power, max_power)
         self.status_text_obj.set_text(
-            f"Latest: {self._format_display_power(self.latest_power_w, scale, unit, decimals)} | Status: {self.status_text} | Avg ({self.settings.average_count}): {self._format_display_power(avg_samples[-1][1] if avg_samples else None, scale, unit, decimals)}"
+            f"Latest: {self._format_display_power(self.latest_power_w, scale, unit, decimals)} | Status: {self.status_text} | Avg (~{self.settings.average_seconds:.1f}s): {self._format_display_power(avg_samples[-1][1] if avg_samples else None, scale, unit, decimals)}"
         )
-        self.ax.figure.canvas.draw_idle()
 
 
 def main() -> None:
