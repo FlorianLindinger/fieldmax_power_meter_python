@@ -15,6 +15,7 @@ import matplotlib.pyplot as plt
 from fieldmax_power_meter import error_print, power_meter_handler
 from matplotlib.animation import FuncAnimation
 from matplotlib.artist import Artist
+from matplotlib.widgets import TextBox
 
 
 @dataclass(slots=True)
@@ -109,10 +110,17 @@ class LivePlotApp:
 
         self.fig, self.ax = plt.subplots(figsize=(settings.window_width / 100, settings.window_height / 100))
 
+        self.fig.subplots_adjust(
+            left=0.075,
+            right=0.93,
+            top=0.975,
+            bottom=0.14,
+        )
+
         self.fig.canvas.mpl_connect("close_event", lambda event: self.close())  # noqa
 
         try:
-            self.fig.canvas.manager.set_window_title(settings.window_title)  # type:ignore
+            self.fig.canvas.manager.set_window_title(settings.window_title)  # type: ignore
         except Exception:
             pass
 
@@ -144,14 +152,22 @@ class LivePlotApp:
             fontsize=10,
             bbox={"facecolor": "white", "alpha": 0.8, "edgecolor": "none"},
         )
+        self.ax.tick_params(
+            axis="both",
+            which="both",
+            top=True,
+            right=True,
+            direction="in",
+            labelright=True,
+        )
 
         self.ax.set_xlabel("Seconds ago")
-        self.ax.set_ylabel("Power [mW]")
-        # self.ax.set_title(settings.window_title)
+        self.ax.set_ylabel("FieldMaxII Power [mW]")
         self.ax.legend(loc="lower left")
         self.ax.grid(True, linewidth=0.5, color="#cccccc", alpha=0.6)
         self.ax.set_xlim(settings.history_seconds, 0)
-        self.fig.tight_layout()
+
+        self._add_controls()
 
         self.animation = FuncAnimation(
             self.fig,
@@ -172,6 +188,60 @@ class LivePlotApp:
                 self.topmost_timer = timer
             except Exception:
                 pass
+
+    def _add_controls(self) -> None:
+        history_ax = self.fig.add_axes((0.12, 0.02, 0.16, 0.04))
+        average_ax = self.fig.add_axes((0.47, 0.02, 0.16, 0.04))
+
+        self.history_box = TextBox(
+            history_ax,
+            "History [s]",
+            initial=f"{self.settings.history_seconds:g}",
+        )
+
+        self.average_box = TextBox(
+            average_ax,
+            "Average [s]",
+            initial=f"{self.settings.average_seconds:g}",
+        )
+
+        self.history_box.on_submit(self._set_history_seconds)
+        self.average_box.on_submit(self._set_average_seconds)
+
+    def _set_history_seconds(self, value: str) -> None:
+        try:
+            history_seconds = float(value)
+        except ValueError:
+            self.history_box.set_val(f"{self.settings.history_seconds:g}")
+            return
+
+        if history_seconds <= 0:
+            self.history_box.set_val(f"{self.settings.history_seconds:g}")
+            return
+
+        self.settings.history_seconds = history_seconds
+
+        with self.samples_lock:
+            self._trim_samples_locked(time.monotonic())
+
+        self.ax.set_xlim(self.settings.history_seconds, 0)
+        self.fig.canvas.draw_idle()
+
+    def _set_average_seconds(self, value: str) -> None:
+        try:
+            average_seconds = float(value)
+        except ValueError:
+            self.average_box.set_val(f"{self.settings.average_seconds:g}")
+            return
+
+        if average_seconds < 0:
+            self.average_box.set_val(f"{self.settings.average_seconds:g}")
+            return
+
+        self.settings.average_seconds = average_seconds
+        self.line_avg.set_label(f"Avg (~{self.settings.average_seconds:.1f}s)")
+        self.ax.legend(loc="lower left")
+        self.fig.canvas.draw_idle()
 
     def run(self) -> None:
         self.status_text = "Connected"
@@ -346,7 +416,7 @@ class LivePlotApp:
         avg_samples = self._compute_running_average(samples)
         scale, unit, decimals = self._select_display_units(samples, avg_samples)
 
-        self.ax.set_ylabel(f"Power [{unit}]")
+        self.ax.set_ylabel(f"FieldMaxII Power [{unit}]")
 
         artists: tuple[Artist, ...] = (
             self.line_raw,
