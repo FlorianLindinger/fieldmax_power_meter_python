@@ -1,6 +1,5 @@
 """Live plot example for a Coherent FieldMax II power meter."""
 
-import math
 import threading
 import time
 from collections import deque
@@ -8,6 +7,7 @@ from dataclasses import dataclass
 from typing import Any
 
 import matplotlib  # noqa
+import numpy as np
 
 matplotlib.use("Qt5Agg")  # must be before pyplot import
 
@@ -181,14 +181,6 @@ class LivePlotApp:
             self.fig.canvas.draw_idle()
             self._set_window_on_top()
 
-            try:
-                timer = self.fig.canvas.new_timer(interval=1000)
-                timer.add_callback(self._set_window_on_top)
-                timer.start()
-                self.topmost_timer = timer
-            except Exception:
-                pass
-
     def _add_controls(self) -> None:
         history_ax = self.fig.add_axes((0.12, 0.02, 0.16, 0.04))
         average_ax = self.fig.add_axes((0.47, 0.02, 0.16, 0.04))
@@ -278,10 +270,8 @@ class LivePlotApp:
 
             from PyQt5 import QtCore  # noqa
 
-            window.setWindowFlags(window.windowFlags() | QtCore.Qt.WindowType.WindowStaysOnTopHint)
+            window.setWindowFlag(QtCore.Qt.WindowType.WindowStaysOnTopHint, True)
             window.show()
-            window.raise_()
-            window.activateWindow()
 
         except Exception as exc:
             print(f"Could not set always-on-top: {exc}")
@@ -384,13 +374,16 @@ class LivePlotApp:
         return 1e3, "mW", 1
 
     def _format_significant(self, value: float, sig: int) -> str:
+        if value is None or not np.isfinite(value):
+            return "--"
+
         if value == 0:
             return f"0.{'0' * (sig - 1)}"
 
         sign = "-" if value < 0 else ""
         abs_value = abs(value)
-        magnitude = math.floor(math.log10(abs_value))
-        decimals = max(0, sig - magnitude - 1)
+        magnitude = int(np.floor(np.log10(abs_value)))
+        decimals = int(max(0, sig - magnitude - 1))
 
         return f"{sign}{abs_value:.{decimals}f}"
 
