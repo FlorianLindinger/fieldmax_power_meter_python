@@ -207,7 +207,7 @@ class LivePlotApp:
         self.average_box.on_submit(self._set_average_seconds)
         self.top_box.on_clicked(self._toggle_always_on_top)
 
-    def _toggle_always_on_top(self, label: str) -> None:
+    def _toggle_always_on_top(self, label: str | None) -> None:
         del label
 
         self.settings.always_on_top = not self.settings.always_on_top
