@@ -2,5 +2,6 @@
 FieldMax2Lib.dll
 # test saving file:
 test.csv
-__pycache__
+__pycache__/*
 *.pyc
+__pycache__/fieldmax_power_meter.cpython-313.pyc
