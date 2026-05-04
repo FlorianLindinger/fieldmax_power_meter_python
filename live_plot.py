@@ -15,7 +15,7 @@ import matplotlib.pyplot as plt
 from fieldmax_power_meter import error_print, power_meter_handler
 from matplotlib.animation import FuncAnimation
 from matplotlib.artist import Artist
-from matplotlib.widgets import TextBox
+from matplotlib.widgets import CheckButtons, TextBox
 
 
 @dataclass(slots=True)
@@ -177,13 +177,13 @@ class LivePlotApp:
             cache_frame_data=False,
         )
 
-        if settings.always_on_top:
-            self.fig.canvas.draw_idle()
-            self._set_window_on_top()
+        self.fig.canvas.draw_idle()
+        self._apply_always_on_top()
 
     def _add_controls(self) -> None:
         history_ax = self.fig.add_axes((0.12, 0.02, 0.16, 0.04))
         average_ax = self.fig.add_axes((0.47, 0.02, 0.16, 0.04))
+        top_ax = self.fig.add_axes((0.76, 0.02, 0.16, 0.04))
 
         self.history_box = TextBox(
             history_ax,
@@ -197,8 +197,21 @@ class LivePlotApp:
             initial=f"{self.settings.average_seconds:g}",
         )
 
+        self.top_box = CheckButtons(
+            top_ax,
+            ["Always on top"],
+            [self.settings.always_on_top],
+        )
+
         self.history_box.on_submit(self._set_history_seconds)
         self.average_box.on_submit(self._set_average_seconds)
+        self.top_box.on_clicked(self._toggle_always_on_top)
+
+    def _toggle_always_on_top(self, label: str) -> None:
+        del label
+
+        self.settings.always_on_top = not self.settings.always_on_top
+        self._apply_always_on_top()
 
     def _set_history_seconds(self, value: str) -> None:
         try:
@@ -260,7 +273,7 @@ class LivePlotApp:
         except Exception:
             pass
 
-    def _set_window_on_top(self) -> None:
+    def _apply_always_on_top(self) -> None:
         try:
             manager = self.fig.canvas.manager
             window = getattr(manager, "window", None)
@@ -270,11 +283,14 @@ class LivePlotApp:
 
             from PyQt5 import QtCore  # noqa
 
-            window.setWindowFlag(QtCore.Qt.WindowType.WindowStaysOnTopHint, True)
+            window.setWindowFlag(
+                QtCore.Qt.WindowType.WindowStaysOnTopHint,
+                self.settings.always_on_top,
+            )
             window.show()
 
         except Exception as exc:
-            print(f"Could not set always-on-top: {exc}")
+            print(f"Could not update always-on-top: {exc}")
 
     def _reader_loop(self) -> None:
         next_read_time = time.monotonic()
@@ -383,7 +399,7 @@ class LivePlotApp:
         sign = "-" if value < 0 else ""
         abs_value = abs(value)
         magnitude = int(np.floor(np.log10(abs_value)))
-        decimals = int(max(0, sig - magnitude - 1))
+        decimals = int(max(0, sig - magnitude - 1))  # type: ignore
 
         return f"{sign}{abs_value:.{decimals}f}"
 
