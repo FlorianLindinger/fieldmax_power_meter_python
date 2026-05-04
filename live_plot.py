@@ -116,10 +116,10 @@ class LivePlotApp:
         self.topmost_timer: Any | None = None
 
         self.fig, self.ax = plt.subplots(figsize=(settings.window_width / 100, settings.window_height / 100))
-        self.fig.canvas.mpl_connect("close_event", lambda event: self.close()) #noqa
+        self.fig.canvas.mpl_connect("close_event", lambda event: self.close())  # noqa
 
         try:
-            self.fig.canvas.manager.set_window_title(settings.window_title) #type: ignore
+            self.fig.canvas.manager.set_window_title(settings.window_title)  # type: ignore
         except Exception:
             pass
 
@@ -161,7 +161,7 @@ class LivePlotApp:
         self.fig.tight_layout()
 
         if settings.always_on_top:
-            self.fig.canvas.mpl_connect("draw_event", lambda event: self._set_window_on_top()) #noqa
+            self.fig.canvas.mpl_connect("draw_event", lambda event: self._set_window_on_top())  # noqa
             self._set_window_on_top()
 
             try:
@@ -228,14 +228,11 @@ class LivePlotApp:
             elif hasattr(window, "wm_attributes"):
                 window.wm_attributes("-topmost", True)
             elif hasattr(window, "setWindowFlags"):
-                try:
-                    from PyQt5 import QtCore #noqa
-                except ImportError:
-                    from PySide6 import QtCore #noqa
-
-                window.setWindowFlags(window.windowFlags() | QtCore.Qt.WindowStaysOnTopHint)
+                from PyQt5 import QtCore  # noqa
+                window.setWindowFlag(QtCore.Qt.WindowType.WindowStaysOnTopHint, True)
                 window.show()
-
+                window.raise_()
+                window.activateWindow()
                 if hasattr(window, "raise_"):
                     window.raise_()
                 if hasattr(window, "activateWindow"):
