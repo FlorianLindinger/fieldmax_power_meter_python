@@ -28,12 +28,13 @@ class LivePlotSettings:
     zero_on_start: bool = False
     read_interval_s: float = 0.20
     history_seconds: float = 60.0
-    average_seconds: float = 2.0
+    average_seconds: float = 5.0
     read_timeout_s: float = 2.0
     window_width: int = 1000
     window_height: int = 600
     redraw_interval_ms: int = 100
     window_title: str = "FieldMaxPM"
+    always_on_top: bool = True
 
 
 SETTINGS = LivePlotSettings()
@@ -112,6 +113,7 @@ class LivePlotApp:
         self.reader_thread = threading.Thread(target=self._reader_loop, daemon=True)
         self.latest_power_w: float | None = None
         self.status_text = "Connecting..."
+        self.topmost_timer = None
 
         self.fig, self.ax = plt.subplots(figsize=(settings.window_width / 100, settings.window_height / 100))
         self.fig.canvas.mpl_connect("close_event", lambda event: self.close())
@@ -120,10 +122,22 @@ class LivePlotApp:
         except Exception:
             pass
 
+        if settings.always_on_top:
+            self.fig.canvas.mpl_connect("draw_event", lambda event: self._set_window_on_top())
+            self._set_window_on_top()
+            try:
+                timer = self.fig.canvas.new_timer(interval=1000)
+                timer.add_callback(self._set_window_on_top)
+                timer.start()
+                self.topmost_timer = timer
+            except Exception:
+                pass
+
         (self.line_raw,) = self.ax.plot([], [], color="#0078d4", label="Raw")
         (self.line_avg,) = self.ax.plot(
             [], [], color="#d45f00", linestyle="--", label=f"Avg (~{settings.average_seconds:.1f}s)"
         )
+        (self.avg_window_line,) = self.ax.plot([], [], color="#808080", linestyle=":", linewidth=1, label="_nolegend_")
         self.status_text_obj = self.ax.text(
             0.01,
             0.95,
@@ -154,6 +168,12 @@ class LivePlotApp:
     def close(self) -> None:
         """Stop the reader thread and release the meter connection."""
         self.stop_event.set()
+        if self.topmost_timer is not None:
+            try:
+                self.topmost_timer.stop()
+            except Exception:
+                pass
+            self.topmost_timer = None
         try:
             self.reader_thread.join(timeout=1.0)
         except RuntimeError:
@@ -164,6 +184,40 @@ class LivePlotApp:
             pass
         try:
             plt.close(self.fig)
+        except Exception:
+            pass
+
+    def _set_window_on_top(self) -> None:
+        """Try to keep the figure window above other windows."""
+        try:
+            manager = self.fig.canvas.manager
+            window = getattr(manager, "window", None)
+            if window is None:
+                window = getattr(manager, "canvas", None)
+
+            if window is None:
+                return
+
+            if hasattr(window, "attributes"):
+                window.attributes("-topmost", True)
+                window.attributes("-topmost", False)
+                window.attributes("-topmost", True)
+            elif hasattr(window, "wm_attributes"):
+                window.wm_attributes("-topmost", True)
+            elif hasattr(window, "setWindowFlags"):
+                try:
+                    from PyQt5 import QtCore
+                except ImportError:
+                    try:
+                        from PySide2 import QtCore
+                    except ImportError:
+                        from PySide6 import QtCore
+                window.setWindowFlags(window.windowFlags() | QtCore.Qt.WindowStaysOnTopHint)
+                window.show()
+                if hasattr(window, "raise_"):
+                    window.raise_()
+                if hasattr(window, "activateWindow"):
+                    window.activateWindow()
         except Exception:
             pass
 
@@ -251,7 +305,7 @@ class LivePlotApp:
 
         if max_power > 1.0:
             return 1.0, "W", 3
-        return 1e3, "mW", 0
+        return 1e3, "mW", 1
 
     def _format_display_power(self, power_w: float | None, scale: float, unit: str, decimals: int) -> str:
         """Format a power value using the selected display unit."""
@@ -308,6 +362,10 @@ class LivePlotApp:
 
         self.ax.set_xlim(0, self.settings.history_seconds)
         self.ax.set_ylim(min_power, max_power)
+
+        avg_window_x = max(0.0, self.settings.history_seconds - self.settings.average_seconds)
+        self.avg_window_line.set_data([avg_window_x, avg_window_x], [min_power, max_power])
+
         self.status_text_obj.set_text(
             f"Latest: {self._format_display_power(self.latest_power_w, scale, unit, decimals)} | Status: {self.status_text} | Avg (~{self.settings.average_seconds:.1f}s): {self._format_display_power(avg_samples[-1][1] if avg_samples else None, scale, unit, decimals)}"
         )
