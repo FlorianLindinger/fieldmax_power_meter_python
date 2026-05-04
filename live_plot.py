@@ -1,8 +1,4 @@
-"""Live plot example for a Coherent FieldMax II power meter.
-
-Edit the values in `SETTINGS` to change startup behavior, especially
-`history_seconds`, which controls how much recent data stays visible.
-"""
+"""Live plot example for a Coherent FieldMax II power meter."""
 
 import math
 import threading
@@ -10,6 +6,10 @@ import time
 from collections import deque
 from dataclasses import dataclass
 from typing import Any
+
+import matplotlib  # noqa
+
+matplotlib.use("Qt5Agg")  # must be before pyplot import
 
 import matplotlib.pyplot as plt
 from fieldmax_power_meter import error_print, power_meter_handler
@@ -19,8 +19,6 @@ from matplotlib.artist import Artist
 
 @dataclass(slots=True)
 class LivePlotSettings:
-    """Startup settings for the live plot example."""
-
     dll_path: str | None = None
     device_idx: int = 0
     wavelength_nm: int | None = 1980
@@ -41,7 +39,6 @@ SETTINGS = LivePlotSettings()
 
 
 def format_power(power_w: float | None) -> str:
-    """Format a power value using a readable unit."""
     if power_w is None:
         return "--"
 
@@ -58,14 +55,12 @@ def format_power(power_w: float | None) -> str:
 
 
 def format_power_mw(power_w: float | None) -> str:
-    """Format the power value in milliwatts with 0 decimals."""
     if power_w is None:
         return "--"
     return f"{power_w * 1e3:.0f} mW"
 
 
 def configure_meter(settings: LivePlotSettings) -> power_meter_handler:
-    """Connect to the meter and apply the requested startup settings."""
     pm = power_meter_handler(dll_path=settings.dll_path)
 
     if not pm.connect(settings.device_idx, sync=False, timeout_s=5):
@@ -88,7 +83,6 @@ def configure_meter(settings: LivePlotSettings) -> power_meter_handler:
 
 
 def validate_settings(settings: LivePlotSettings) -> None:
-    """Reject invalid startup values before talking to the meter."""
     if settings.history_seconds <= 0:
         raise ValueError("history_seconds must be greater than 0.")
     if settings.average_seconds < 0:
@@ -102,8 +96,6 @@ def validate_settings(settings: LivePlotSettings) -> None:
 
 
 class LivePlotApp:
-    """Small matplotlib app that draws a scrolling power trace."""
-
     def __init__(self, meter: power_meter_handler, settings: LivePlotSettings):
         self.meter = meter
         self.settings = settings
@@ -116,10 +108,11 @@ class LivePlotApp:
         self.topmost_timer: Any | None = None
 
         self.fig, self.ax = plt.subplots(figsize=(settings.window_width / 100, settings.window_height / 100))
+
         self.fig.canvas.mpl_connect("close_event", lambda event: self.close())  # noqa
 
         try:
-            self.fig.canvas.manager.set_window_title(settings.window_title)  # type: ignore
+            self.fig.canvas.manager.set_window_title(settings.window_title)  # type:ignore
         except Exception:
             pass
 
@@ -154,14 +147,22 @@ class LivePlotApp:
 
         self.ax.set_xlabel("Seconds ago")
         self.ax.set_ylabel("Power [mW]")
-        self.ax.set_title(settings.window_title)
+        # self.ax.set_title(settings.window_title)
         self.ax.legend(loc="lower left")
         self.ax.grid(True, linewidth=0.5, color="#cccccc", alpha=0.6)
         self.ax.set_xlim(settings.history_seconds, 0)
         self.fig.tight_layout()
 
+        self.animation = FuncAnimation(
+            self.fig,
+            self._draw_plot,
+            interval=settings.redraw_interval_ms,
+            blit=False,
+            cache_frame_data=False,
+        )
+
         if settings.always_on_top:
-            self.fig.canvas.mpl_connect("draw_event", lambda event: self._set_window_on_top())  # noqa
+            self.fig.canvas.draw_idle()
             self._set_window_on_top()
 
             try:
@@ -172,22 +173,12 @@ class LivePlotApp:
             except Exception:
                 pass
 
-        self.animation = FuncAnimation(
-            self.fig,
-            self._draw_plot,
-            interval=settings.redraw_interval_ms,
-            blit=False,
-            cache_frame_data=False,
-        )
-
     def run(self) -> None:
-        """Start background reads and launch the UI loop."""
         self.status_text = "Connected"
         self.reader_thread.start()
         plt.show()
 
     def close(self) -> None:
-        """Stop the reader thread and release the meter connection."""
         self.stop_event.set()
 
         if self.topmost_timer is not None:
@@ -208,41 +199,24 @@ class LivePlotApp:
             pass
 
     def _set_window_on_top(self) -> None:
-        """Try to keep the figure window above other windows."""
         try:
             manager = self.fig.canvas.manager
             window = getattr(manager, "window", None)
 
-            if window is None and hasattr(self.fig.canvas, "get_tk_widget"):
-                try:
-                    tk_widget = self.fig.canvas.get_tk_widget()
-                    window = tk_widget.winfo_toplevel()
-                except Exception:
-                    window = None
-
             if window is None:
                 return
 
-            if hasattr(window, "attributes"):
-                window.attributes("-topmost", True)
-            elif hasattr(window, "wm_attributes"):
-                window.wm_attributes("-topmost", True)
-            elif hasattr(window, "setWindowFlags"):
-                from PyQt5 import QtCore  # noqa
-                window.setWindowFlag(QtCore.Qt.WindowType.WindowStaysOnTopHint, True)
-                window.show()
-                window.raise_()
-                window.activateWindow()
-                if hasattr(window, "raise_"):
-                    window.raise_()
-                if hasattr(window, "activateWindow"):
-                    window.activateWindow()
+            from PyQt5 import QtCore  # noqa
 
-        except Exception:
-            pass
+            window.setWindowFlags(window.windowFlags() | QtCore.Qt.WindowType.WindowStaysOnTopHint)
+            window.show()
+            window.raise_()
+            window.activateWindow()
+
+        except Exception as exc:
+            print(f"Could not set always-on-top: {exc}")
 
     def _reader_loop(self) -> None:
-        """Poll the meter continuously in the background."""
         next_read_time = time.monotonic()
 
         while not self.stop_event.is_set():
@@ -272,14 +246,12 @@ class LivePlotApp:
             next_read_time = sample_time + self.settings.read_interval_s
 
     def _trim_samples_locked(self, current_time: float) -> None:
-        """Drop samples that are outside the visible history window."""
         cutoff = current_time - self.settings.history_seconds
 
         while self.samples and self.samples[0][0] < cutoff:
             self.samples.popleft()
 
     def _copy_samples(self) -> list[tuple[float, float]]:
-        """Return a snapshot of the current sample buffer."""
         current_time = time.monotonic()
 
         with self.samples_lock:
@@ -287,7 +259,6 @@ class LivePlotApp:
             return list(self.samples)
 
     def _effective_average_count(self) -> int:
-        """Return the number of samples to average based on the configured seconds."""
         if self.settings.average_seconds <= 0:
             return 1
 
@@ -298,7 +269,6 @@ class LivePlotApp:
         self,
         samples: list[tuple[float, float]],
     ) -> list[tuple[float, float]]:
-        """Compute a simple trailing average over the most recent samples."""
         if not samples:
             return []
 
@@ -327,7 +297,6 @@ class LivePlotApp:
         samples: list[tuple[float, float]],
         avg_samples: list[tuple[float, float]],
     ) -> tuple[float, str, int]:
-        """Return scale, unit label, and decimals based on the current history."""
         max_power = 0.0
 
         if samples:
@@ -345,7 +314,6 @@ class LivePlotApp:
         return 1e3, "mW", 1
 
     def _format_significant(self, value: float, sig: int) -> str:
-        """Format a number with a fixed number of significant digits."""
         if value == 0:
             return f"0.{'0' * (sig - 1)}"
 
@@ -363,7 +331,6 @@ class LivePlotApp:
         unit: str,
         decimals: int,
     ) -> str:
-        """Format a power value using the selected display unit."""
         del decimals
 
         if power_w is None:
@@ -373,7 +340,6 @@ class LivePlotApp:
         return f"{self._format_significant(value, 3)} {unit}"
 
     def _draw_plot(self, frame: int) -> tuple[Artist, ...]:
-        """Render the live plot frame."""
         del frame
 
         samples = self._copy_samples()
@@ -446,17 +412,15 @@ class LivePlotApp:
             decimals,
         )
 
-        self.status_text_obj.set_text(
-            f"Latest: {latest_text} | "
-            f"Avg (~{self.settings.average_seconds:.1f}s): {avg_text} | "
-            f"Status: {self.status_text}"
-        )
+        status_text_tmp = f"Latest: {latest_text} | Avg (~{self.settings.average_seconds:.1f}s): {avg_text}"
+        if self.status_text != "":
+            status_text_tmp += f" | Status: {self.status_text}"
+        self.status_text_obj.set_text(status_text_tmp)
 
         return artists
 
 
 def main() -> None:
-    """Run the live plot example."""
     meter = None
 
     try:
