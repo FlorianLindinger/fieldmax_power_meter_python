@@ -141,7 +141,7 @@ def _driver_worker(conn, dll_path: str):
 
                 raw = bytes(reply_buffer)
                 reply = raw.split(b"\x00", 1)[0].decode("ascii", errors="replace")
-                conn.send(("ok", {"rc": int(rc), "reply": reply, "size": int(size.value)}))
+                conn.send(("ok", {"rc": int(rc), "reply": reply, "size": int(size.value)})) #type:ignore
 
             elif cmd == "get_serial_number":
                 f = dll.fm2LibGetSerialNumber
@@ -298,8 +298,8 @@ class power_meter_handler:
         self, command: str, print_error=True, buffer_len: int = 100, sync=True, timeout_s: float | None = None
     ):
         """Send a low-level packaged command to the meter and return its reply.
-        
-        See "fieldmaxii-labview-examples.zip/Getting Started FMII LV.pdf" for commands: 
+
+        See "fieldmaxii-labview-examples.zip/Getting Started FMII LV.pdf" for commands:
         https://www.coherent.com/content/dam/coherent/site/en/resources/laser-measurement-and-control-help-center/software-drivers-and-manuals/fieldmax-ii/fieldmaxii-labview-examples.zip
         """
 
@@ -352,7 +352,7 @@ class power_meter_handler:
         try:
             meter_id = self._request(
                 "open",
-                {"device_idx": int(device_idx)},
+                {"device_idx": int(device_idx)},  # type:ignore
                 timeout_s=timeout_s,
             )
 
