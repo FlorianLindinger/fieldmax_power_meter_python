@@ -136,10 +136,11 @@ class LivePlotApp:
         (self.avg_window_line,) = self.ax.plot(
             [],
             [],
-            color="#808080",
+            color="black",
             linestyle=":",
             linewidth=1,
-            label="_nolegend_",
+            alpha=0.7,
+            label="Averaging Window",
         )
 
         self.status_text_obj = self.ax.text(
