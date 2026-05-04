@@ -6,6 +6,7 @@ Edit the values in `SETTINGS` to change startup behavior, especially
 
 from __future__ import annotations
 
+import math
 import threading
 import time
 from collections import deque
@@ -27,8 +28,8 @@ class LivePlotSettings:
     auto_range: bool | None = True
     zero_on_start: bool = False
     read_interval_s: float = 0.20
-    history_seconds: float = 60.0
-    average_seconds: float = 5.0
+    history_seconds: float = 1000.0
+    average_seconds: float = 15.0
     read_timeout_s: float = 2.0
     window_width: int = 1000
     window_height: int = 600
@@ -133,9 +134,9 @@ class LivePlotApp:
             except Exception:
                 pass
 
-        (self.line_raw,) = self.ax.plot([], [], color="#0078d4", label="Raw")
+        (self.line_raw,) = self.ax.plot([], [], color="#0078d4", label="Raw", zorder=1)
         (self.line_avg,) = self.ax.plot(
-            [], [], color="#d45f00", linestyle="--", label=f"Avg (~{settings.average_seconds:.1f}s)"
+            [], [], color="red", linestyle="-", label=f"Avg (~{settings.average_seconds:.1f}s)", zorder=2
         )
         (self.avg_window_line,) = self.ax.plot([], [], color="#808080", linestyle=":", linewidth=1, label="_nolegend_")
         self.status_text_obj = self.ax.text(
@@ -192,6 +193,13 @@ class LivePlotApp:
         try:
             manager = self.fig.canvas.manager
             window = getattr(manager, "window", None)
+            if window is None and hasattr(self.fig.canvas, "get_tk_widget"):
+                try:
+                    tk_widget = self.fig.canvas.get_tk_widget()
+                    window = getattr(tk_widget, "winfo_toplevel", lambda: None)()
+                except Exception:
+                    window = None
+
             if window is None:
                 window = getattr(manager, "canvas", None)
 
@@ -199,8 +207,6 @@ class LivePlotApp:
                 return
 
             if hasattr(window, "attributes"):
-                window.attributes("-topmost", True)
-                window.attributes("-topmost", False)
                 window.attributes("-topmost", True)
             elif hasattr(window, "wm_attributes"):
                 window.wm_attributes("-topmost", True)
@@ -307,11 +313,24 @@ class LivePlotApp:
             return 1.0, "W", 3
         return 1e3, "mW", 1
 
+    def _format_significant(self, value: float, sig: int) -> str:
+        """Format a number with a fixed number of significant digits, preserving trailing zeros."""
+        if value == 0:
+            return f"0.{ '0' * (sig - 1)}"
+        sign = "-" if value < 0 else ""
+        abs_value = abs(value)
+        magnitude = math.floor(math.log10(abs_value))
+        decimals = sig - magnitude - 1
+        if decimals < 0:
+            decimals = 0
+        return f"{sign}{abs_value:.{decimals}f}"
+
     def _format_display_power(self, power_w: float | None, scale: float, unit: str, decimals: int) -> str:
-        """Format a power value using the selected display unit."""
+        """Format a power value using the selected display unit with 3 significant digits."""
         if power_w is None:
             return "--"
-        return f"{power_w * scale:.{decimals}f} {unit}"
+        value = power_w * scale
+        return f"{self._format_significant(value, 3)} {unit}"
 
     def _draw_plot(self, frame) -> None:
         """Render the live plot frame."""
@@ -325,7 +344,7 @@ class LivePlotApp:
             self.line_avg.set_data([], [])
             self.ax.set_xlim(0, self.settings.history_seconds)
             self.status_text_obj.set_text(
-                f"Latest: {self._format_display_power(self.latest_power_w, scale, unit, decimals)} | Status: {self.status_text}"
+                f"Latest: {self._format_display_power(self.latest_power_w, scale, unit, decimals)}"
             )
             self.ax.figure.canvas.draw_idle()
             return
@@ -367,7 +386,7 @@ class LivePlotApp:
         self.avg_window_line.set_data([avg_window_x, avg_window_x], [min_power, max_power])
 
         self.status_text_obj.set_text(
-            f"Latest: {self._format_display_power(self.latest_power_w, scale, unit, decimals)} | Status: {self.status_text} | Avg (~{self.settings.average_seconds:.1f}s): {self._format_display_power(avg_samples[-1][1] if avg_samples else None, scale, unit, decimals)}"
+            f"Latest: {self._format_display_power(self.latest_power_w, scale, unit, decimals)} | Avg (~{self.settings.average_seconds:.1f}s): {self._format_display_power(avg_samples[-1][1] if avg_samples else None, scale, unit, decimals)}"
         )
 
 
