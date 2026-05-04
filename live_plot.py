@@ -29,7 +29,7 @@ class LivePlotSettings:
     zero_on_start: bool = False
     read_interval_s: float = 0.20
     history_seconds: float = 1000.0
-    average_seconds: float = 15.0
+    average_seconds: float = 30.0
     read_timeout_s: float = 2.0
     window_width: int = 1000
     window_height: int = 600
@@ -316,7 +316,7 @@ class LivePlotApp:
     def _format_significant(self, value: float, sig: int) -> str:
         """Format a number with a fixed number of significant digits, preserving trailing zeros."""
         if value == 0:
-            return f"0.{ '0' * (sig - 1)}"
+            return f"0.{'0' * (sig - 1)}"
         sign = "-" if value < 0 else ""
         abs_value = abs(value)
         magnitude = math.floor(math.log10(abs_value))
@@ -342,7 +342,7 @@ class LivePlotApp:
         if not samples:
             self.line_raw.set_data([], [])
             self.line_avg.set_data([], [])
-            self.ax.set_xlim(0, self.settings.history_seconds)
+            self.ax.set_xlim(self.settings.history_seconds, 0)
             self.status_text_obj.set_text(
                 f"Latest: {self._format_display_power(self.latest_power_w, scale, unit, decimals)}"
             )
@@ -350,8 +350,7 @@ class LivePlotApp:
             return
 
         now = time.monotonic()
-        start_time = now - self.settings.history_seconds
-        x = [sample_time - start_time for sample_time, _ in samples]
+        x = [now - sample_time for sample_time, _ in samples]
         y = [power * scale for _, power in samples]
 
         self.line_raw.set_data(x, y)
@@ -379,10 +378,10 @@ class LivePlotApp:
             min_power -= padding
             max_power += padding
 
-        self.ax.set_xlim(0, self.settings.history_seconds)
+        self.ax.set_xlim(self.settings.history_seconds, 0)
         self.ax.set_ylim(min_power, max_power)
 
-        avg_window_x = max(0.0, self.settings.history_seconds - self.settings.average_seconds)
+        avg_window_x = max(0.0, self.settings.average_seconds)
         self.avg_window_line.set_data([avg_window_x, avg_window_x], [min_power, max_power])
 
         self.status_text_obj.set_text(
