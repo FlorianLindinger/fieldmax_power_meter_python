@@ -2,3 +2,5 @@
 FieldMax2Lib.dll
 # test saving file:
 test.csv
+__pycache__
+*.pyc
