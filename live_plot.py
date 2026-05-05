@@ -282,7 +282,7 @@ class LivePlotApp:
             if window is None:
                 return
 
-            from PyQt5 import QtCore  # noqa
+            from PyQt5 import QtCore
 
             window.setWindowFlag(
                 QtCore.Qt.WindowType.WindowStaysOnTopHint,
